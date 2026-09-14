@@ -72,7 +72,11 @@
   .drawer.open{transform:translateX(0);}
   .drawer .dh{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;}
   .drawer .dh b{font-size:14px;}
+  .drawer .dsearch{padding:9px 12px;border-bottom:1px solid var(--line);}
+  .drawer .dsearch input{width:100%;border:1px solid var(--line2);border-radius:8px;padding:8px 11px 8px 30px;font-size:13px;
+    background:#fff url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2'><circle cx='11' cy='11' r='7'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>") no-repeat 8px center;}
   .drawer .dl{flex:1;overflow-y:auto;padding:8px;}
+  .drawer .dcount{padding:2px 12px 0;font-size:11px;color:#999;}
   .histItem{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px;cursor:pointer;}
   .histItem:hover{background:#f6f9fc;border-color:var(--accent);}
   .histItem .hn{font-weight:700;font-size:13px;}
@@ -270,6 +274,8 @@
 <div class="overlay" id="overlay" onclick="closeHistory()"></div>
 <div class="drawer" id="drawer">
   <div class="dh"><b>Historia ofert</b><button class="btn ghost" onclick="closeHistory()">✕</button></div>
+  <div class="dsearch"><input id="histSearch" type="text" placeholder="Szukaj po nazwie firmy…" oninput="renderHistList(this.value)"></div>
+  <div class="dcount" id="histCount"></div>
   <div class="dl" id="histList"></div>
 </div>
 
@@ -498,7 +504,7 @@ function render(){
         <th style="width:7%">Kolory</th>
         <th style="width:9%">Szt./<br>paleta</th>
         <th style="width:9%">Nakład<br>(szt.)</th>
-        <th style="width:11%">Cena/szt.<br>PLN</th>
+        <th style="width:11%">Cena/1000<br>szt. PLN</th>
         <th style="width:9%">Klisza<br>PLN</th>
         <th style="width:10%">Wykrojnik<br>PLN</th>
       </tr></thead>
@@ -530,17 +536,31 @@ function saveOffer(){
   putOffers(arr);bumpNumber(state.offer.num);
   render();toast('Ofertę zapisano: '+state.offer.num);
 }
-function openHistory(){
-  const arr=getOffers();
+function renderHistList(q){
+  q=(q||'').trim().toLowerCase();
+  const all=getOffers();
+  const cnt=document.getElementById('histCount');
+  if(!all.length){
+    document.getElementById('histList').innerHTML='<div class="empty">Brak zapisanych ofert.</div>';
+    if(cnt)cnt.textContent='';
+    return;
+  }
+  const arr=q? all.filter(r=>((r.client||'')+' '+(r.num||'')).toLowerCase().includes(q)) : all;
+  if(cnt)cnt.textContent = q ? (arr.length+' z '+all.length+' ofert') : (all.length+' ofert');
   document.getElementById('histList').innerHTML = arr.length? arr.map(r=>`
     <div class="histItem" onclick="loadOffer('${r.id}')">
       <button class="del" onclick="event.stopPropagation();deleteOffer('${r.id}')">usuń</button>
       <div class="hn">${esc(r.num)}</div>
       <div class="hc">${esc(r.client||'(bez klienta)')}</div>
       <div class="hd">zapisano ${new Date(r.savedAt).toLocaleString('pl-PL')}</div>
-    </div>`).join('') : '<div class="empty">Brak zapisanych ofert.</div>';
+    </div>`).join('') : '<div class="empty">Brak ofert dla „'+esc(q)+'".</div>';
+}
+function openHistory(){
+  const s=document.getElementById('histSearch');if(s)s.value='';
+  renderHistList('');
   document.getElementById('drawer').classList.add('open');
   document.getElementById('overlay').classList.add('open');
+  setTimeout(()=>{const s2=document.getElementById('histSearch');if(s2)s2.focus();},60);
 }
 function closeHistory(){document.getElementById('drawer').classList.remove('open');document.getElementById('overlay').classList.remove('open');}
 function loadOffer(id){
@@ -551,7 +571,8 @@ function loadOffer(id){
 }
 function deleteOffer(id){
   if(!confirm('Usunąć tę ofertę z historii?'))return;
-  putOffers(getOffers().filter(x=>x.id!==id));openHistory();
+  putOffers(getOffers().filter(x=>x.id!==id));
+  const s=document.getElementById('histSearch');renderHistList(s?s.value:'');
 }
 
 /* ================= new / pdf / backup ================= */
