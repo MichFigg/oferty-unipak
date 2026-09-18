@@ -18,6 +18,17 @@
     padding:10px 16px;background:#fff;border-bottom:1px solid var(--line);flex-wrap:wrap;}
   .topbar .brand{font-weight:700;font-size:15px;margin-right:8px;}
   .topbar .brand span{color:var(--accent);}
+  /* language toggle */
+  .langtog{position:relative;flex:0 0 auto;width:66px;height:30px;border-radius:15px;border:1px solid var(--line2);
+    background:#eef1f5;cursor:pointer;padding:0;margin-left:6px;overflow:hidden;}
+  .langtog .knob{position:absolute;top:2px;left:2px;width:calc(50% - 3px);height:calc(100% - 4px);border-radius:12px;
+    background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.28);transition:left .18s ease;z-index:1;}
+  .langtog.en .knob{left:calc(50% + 1px);}
+  .langtog .half{position:absolute;top:0;height:100%;width:50%;display:flex;align-items:center;justify-content:center;z-index:2;transition:opacity .15s;}
+  .langtog .half.l{left:0;} .langtog .half.r{right:0;}
+  .langtog .half svg{width:21px;height:14px;border-radius:2px;box-shadow:0 0 0 1px rgba(0,0,0,.18);display:block;}
+  .langtog .half.r{opacity:.42;}
+  .langtog.en .half.l{opacity:.42;} .langtog.en .half.r{opacity:1;}
   .btn{border:1px solid var(--line2);background:#fff;color:var(--ink);border-radius:8px;
     padding:8px 14px;font-size:13px;cursor:pointer;font-weight:600;}
   .btn:hover{background:#f5f5f5;}
@@ -168,6 +179,11 @@
   <button class="btn ghost" onclick="document.getElementById('impFile').click()" title="Wczytaj wcześniejszą kopię zapasową (.json)">⤒ Wczytaj kopię</button>
   <input type="file" id="impFile" accept="application/json" style="display:none" onchange="importBackup(event)">
   <button class="btn primary" onclick="generatePDF()">📄 Pobierz PDF</button>
+  <button class="langtog" id="langTog" onclick="toggleLang()" title="Język oferty / Offer language" aria-label="Język oferty">
+    <span class="knob"></span>
+    <span class="half l"><svg viewBox="0 0 20 13" xmlns="http://www.w3.org/2000/svg"><rect width="20" height="6.5" fill="#ffffff"/><rect y="6.5" width="20" height="6.5" fill="#dc143c"/></svg></span>
+    <span class="half r"><svg viewBox="0 0 60 40" xmlns="http://www.w3.org/2000/svg"><clipPath id="ukc"><rect width="60" height="40"/></clipPath><g clip-path="url(#ukc)"><rect width="60" height="40" fill="#012169"/><path d="M0,0 L60,40 M60,0 L0,40" stroke="#ffffff" stroke-width="8"/><path d="M0,0 L60,40 M60,0 L0,40" stroke="#C8102E" stroke-width="4.8"/><path d="M30,0 V40 M0,20 H60" stroke="#ffffff" stroke-width="13.3"/><path d="M30,0 V40 M0,20 H60" stroke="#C8102E" stroke-width="8"/></g></svg></span>
+  </button>
 </div>
 
 <div class="main">
@@ -228,6 +244,7 @@
       <div class="body">
         <div id="items"></div>
         <button class="addbtn" onclick="addItem()">＋ Dodaj pozycję</button>
+        <button class="addbtn" style="margin-left:6px" onclick="copyItem()" title="Duplikuje ostatnią pozycję z tymi samymi danymi">⧉ Skopiuj pozycję</button>
       </div>
     </details>
 
@@ -296,7 +313,35 @@ const DEF_SETTINGS={
   nip:'5511730601', regon:'070780845', phone:'+48 570 611 611', www:'www.unipak.com.pl',
   email:'zamow@unipak.com.pl', rep:'Tomasz Figwer', reprole:'Dział handlowy', station:''
 };
-const DEF_DISC='Niniejsza oferta ma charakter informacyjny i nie stanowi oferty handlowej w rozumieniu art. 66 § 1 Kodeksu cywilnego. Zastrzegamy sobie prawo do zmiany podanych cen w przypadku zmiany czynników kosztowych. W przypadku braku kontaktu handlowego w ciągu 30 dni od otrzymania oferty zastrzegamy możliwość zmiany ceny.';
+/* ---------- język: stałe napisy szablonu (PL/EN) ---------- */
+const TPL={
+  pl:{title:'OFERTA CENOWA',numPrefix:'nr',date:'Data',from:'Ważna od',to:'Ważna do',
+      toParty:'Do',fromParty:'Od',contact:'Opiekun',
+      intro:'Dziękujemy za zapytanie. W odpowiedzi przygotowaliśmy dla Państwa ofertę zgodnie z poniższymi parametrami:',
+      th:['Lp','Nazwa opakowania','Wymiary wewn.<br>(L × W × H)','Specyfikacja tektury','Kolory','Szt./<br>paleta','Nakład<br>(szt.)','Cena za<br>szt. PLN','Klisza<br>PLN','Wykrojnik<br>PLN'],
+      terms:{delivery:'Warunki dostawy',pallet:'Rozliczenie palet',lead:'Termin realizacji',pay:'Termin płatności',tol:'Tolerancja ilościowa',graphic:'Odpłatność za grafikę'},
+      other:'Inne warunki'},
+  en:{title:'PRICE QUOTATION',numPrefix:'no.',date:'Date',from:'Valid from',to:'Valid until',
+      toParty:'To',fromParty:'From',contact:'Contact',
+      intro:'Thank you for your enquiry. Please find below our quotation prepared to the following specifications:',
+      th:['No.','Packaging','Internal dims<br>(L × W × H)','Board spec.','Colours','Pcs/<br>pallet','Quantity<br>(pcs)','Price per<br>pc PLN','Print plate<br>PLN','Cutting die<br>PLN'],
+      terms:{delivery:'Delivery terms',pallet:'Pallet handling',lead:'Lead time',pay:'Payment terms',tol:'Quantity tolerance',graphic:'Artwork fee'},
+      other:'Other terms'}
+};
+/* ---------- język: domyślne treści (podmieniane przy przełączaniu, jeśli nietknięte) ---------- */
+const DEFC={
+  pl:{vat:'Ceny nie zawierają podatku VAT (23%).',
+      disc:'Niniejsza oferta ma charakter informacyjny i nie stanowi oferty handlowej w rozumieniu art. 66 § 1 Kodeksu cywilnego. Zastrzegamy sobie prawo do zmiany podanych cen w przypadku zmiany czynników kosztowych. W przypadku braku kontaktu handlowego w ciągu 30 dni od otrzymania oferty zastrzegamy możliwość zmiany ceny.',
+      notesArr:['Wszystkie produkty mogą być oferowane z certyfikatem FSC.','Dla wzorów powyżej 3 szt. wybranego opakowania cena ustalana indywidualnie.','Narzędzia są przechowywane przez 12 miesięcy od ostatniego zamówienia.'],
+      delivery:'DAP',pallet:'Zwrotna',pay:'14 dni',tol:'+/- 7 %'},
+  en:{vat:'Prices exclude VAT (23%).',
+      disc:'This quotation is for information purposes only and does not constitute a commercial offer within the meaning of Article 66 § 1 of the Polish Civil Code. We reserve the right to change the quoted prices in the event of changes in cost factors. If no business contact is made within 30 days of receiving this quotation, we reserve the right to change the price.',
+      notesArr:['All products can be offered with FSC certification.','For samples above 3 pcs of a selected packaging, the price is quoted individually.','Tooling is stored for 12 months from the last order.'],
+      delivery:'DAP',pallet:'Returnable',pay:'14 days',tol:'+/- 7 %'}
+};
+DEFC.pl.notes=DEFC.pl.notesArr.join('\n'); DEFC.en.notes=DEFC.en.notesArr.join('\n');
+let lang='pl'; try{if(localStorage.getItem('unipak_lang')==='en')lang='en';}catch(e){}
+const DEF_DISC=DEFC.pl.disc;
 const DEF_NOTES='Wszystkie produkty mogą być oferowane z certyfikatem FSC.\nDla wzorów powyżej 3 szt. wybranego opakowania cena ustalana indywidualnie.\nNarzędzia są przechowywane przez 12 miesięcy od ostatniego zamówienia.';
 
 /* ---------- state ---------- */
@@ -304,12 +349,14 @@ let state={settings:{...DEF_SETTINGS}, offer:blankOffer()};
 
 function blankItem(){return {name:'',dims:'',spec:'',colors:'',perPallet:'',klisza:'',wykrojnik:'',tiers:[{qty:'',price:''}]};}
 function blankOffer(){
+  const d=DEFC[lang];
   return {
+    lang:lang,
     num:'', date:today(), from:today(), to:addDays(today(),14),
     client:{name:'',person:'',phone:'',email:'',addr:''},
     items:[blankItem()],
-    w:{delivery:'DAP',pallet:'Zwrotna',lead:'',pay:'14 dni',tol:'+/- 7 %',graphic:'',vat:'Ceny nie zawierają podatku VAT (23%).',other:''},
-    notes:DEF_NOTES, discOn:true, disc:DEF_DISC
+    w:{delivery:d.delivery,pallet:d.pallet,lead:'',pay:d.pay,tol:d.tol,graphic:'',vat:d.vat,other:''},
+    notes:d.notes, discOn:true, disc:d.disc
   };
 }
 
@@ -400,12 +447,12 @@ function renderItemsForm(){
         <div class="fld"><label>Wykrojnik (PLN)</label>
           <input value="${esc(it.wykrojnik)}" oninput="upd(${i},'wykrojnik',this.value)"></div>
       </div>
-      <label class="miniLbl" style="margin-top:2px">Progi ilościowe (nakład → cena / 1000 szt.)</label>
+      <label class="miniLbl" style="margin-top:2px">Progi ilościowe (nakład → cena za szt.)</label>
       ${it.tiers.map((t,j)=>`
         <div class="tier">
           <div><span class="miniLbl">Nakład (szt.)</span>
             <input value="${esc(t.qty)}" oninput="updT(${i},${j},'qty',this.value)"></div>
-          <div><span class="miniLbl">Cena / 1000 (PLN)</span>
+          <div><span class="miniLbl">Cena za szt. (PLN)</span>
             <input value="${esc(t.price)}" oninput="updT(${i},${j},'price',this.value)"></div>
           ${it.tiers.length>1?`<button class="xbtn" title="Usuń próg" onclick="removeTier(${i},${j})">✕</button>`:''}
         </div>`).join('')}
@@ -415,6 +462,13 @@ function renderItemsForm(){
 function upd(i,f,v){state.offer.items[i][f]=v;render();}
 function updT(i,j,f,v){state.offer.items[i].tiers[j][f]=v;render();}
 function addItem(){collect();state.offer.items.push(blankItem());renderItemsForm();render();}
+function copyItem(){
+  collect();
+  const items=state.offer.items;
+  if(!items.length){addItem();return;}
+  items.push(JSON.parse(JSON.stringify(items[items.length-1])));
+  renderItemsForm();render();toast('Skopiowano ostatnią pozycję');
+}
 function removeItem(i){collect();state.offer.items.splice(i,1);renderItemsForm();render();}
 function addTier(i){collect();state.offer.items[i].tiers.push({qty:'',price:''});renderItemsForm();render();}
 function removeTier(i,j){collect();state.offer.items[i].tiers.splice(j,1);renderItemsForm();render();}
@@ -422,14 +476,14 @@ function removeTier(i,j){collect();state.offer.items[i].tiers.splice(j,1);render
 /* ================= RENDER OFFER SHEET ================= */
 function render(){
   collect();
-  const s=state.settings,o=state.offer;
+  const s=state.settings,o=state.offer,t=TPL[lang];
 
   // parties
   const cl=o.client;
   let clLines=[cl.person,cl.phone?('tel. '+cl.phone):'',cl.email,cl.addr].filter(Boolean)
       .map(x=>`<div class="ln">${esc(x)}</div>`).join('');
   let odLines=[s.addr1,s.addr2,s.nip?('NIP: '+s.nip):'',s.phone?('tel. '+s.phone):'',s.email,
-      (s.rep?('Opiekun: '+s.rep+(s.reprole?(' · '+s.reprole):'')):'')].filter(Boolean)
+      (s.rep?(t.contact+': '+s.rep+(s.reprole?(' · '+s.reprole):'')):'')].filter(Boolean)
       .map(x=>`<div class="ln">${esc(x)}</div>`).join('');
 
   // table
@@ -459,10 +513,11 @@ function render(){
 
   // terms
   const w=o.w;
+  const TL=t.terms;
   const termRows=[
-    ['Warunki dostawy',w.delivery],['Rozliczenie palet',w.pallet],
-    ['Termin realizacji',w.lead],['Termin płatności',w.pay],
-    ['Tolerancja ilościowa',w.tol],['Odpłatność za grafikę',w.graphic]
+    [TL.delivery,w.delivery],[TL.pallet,w.pallet],
+    [TL.lead,w.lead],[TL.pay,w.pay],
+    [TL.tol,w.tol],[TL.graphic,w.graphic]
   ].filter(r=>r[1]&&r[1].trim())
    .map(r=>`<div class="t"><span class="k">${esc(r[0])}:</span><span>${esc(r[1])}</span></div>`).join('');
 
@@ -478,42 +533,42 @@ function render(){
   document.getElementById('sheet').innerHTML=`
     <div class="s-top">
       <div class="s-title">
-        <h1>OFERTA CENOWA</h1>
-        ${o.num?`<div class="num">nr ${esc(o.num)}</div>`:''}
+        <h1>${t.title}</h1>
+        ${o.num?`<div class="num">${t.numPrefix} ${esc(o.num)}</div>`:''}
         <div class="s-dates">
-          ${o.date?`<b>Data:</b> ${fmtDate(o.date)}&nbsp;&nbsp;`:''}
-          ${o.from?`<b>Ważna od:</b> ${fmtDate(o.from)}&nbsp;&nbsp;`:''}
-          ${o.to?`<b>Ważna do:</b> ${fmtDate(o.to)}`:''}
+          ${o.date?`<b>${t.date}:</b> ${fmtDate(o.date)}&nbsp;&nbsp;`:''}
+          ${o.from?`<b>${t.from}:</b> ${fmtDate(o.from)}&nbsp;&nbsp;`:''}
+          ${o.to?`<b>${t.to}:</b> ${fmtDate(o.to)}`:''}
         </div>
       </div>
       <div class="s-logo"><img src="${LOGO}" alt="UNIPAK"></div>
     </div>
     <hr class="s-rule">
     <div class="s-parties">
-      <div class="col"><div class="lbl">Do</div>
+      <div class="col"><div class="lbl">${t.toParty}</div>
         <div class="nm">${esc(cl.name||'')}</div>${clLines}</div>
-      <div class="col"><div class="lbl">Od</div>
+      <div class="col"><div class="lbl">${t.fromParty}</div>
         <div class="nm">${esc(s.name||'')}</div>${odLines}</div>
     </div>
-    <div class="s-intro">Dziękujemy za zapytanie. W odpowiedzi przygotowaliśmy dla Państwa ofertę zgodnie z poniższymi parametrami:</div>
+    <div class="s-intro">${t.intro}</div>
     <table class="s-tab">
       <thead><tr>
-        <th style="width:6%">Lp</th>
-        <th style="width:17%">Nazwa opakowania</th>
-        <th style="width:15%">Wymiary wewn.<br>(L × W × H)</th>
-        <th style="width:17%">Specyfikacja tektury</th>
-        <th style="width:7%">Kolory</th>
-        <th style="width:9%">Szt./<br>paleta</th>
-        <th style="width:9%">Nakład<br>(szt.)</th>
-        <th style="width:11%">Cena/1000<br>szt. PLN</th>
-        <th style="width:9%">Klisza<br>PLN</th>
-        <th style="width:10%">Wykrojnik<br>PLN</th>
+        <th style="width:6%">${t.th[0]}</th>
+        <th style="width:17%">${t.th[1]}</th>
+        <th style="width:15%">${t.th[2]}</th>
+        <th style="width:17%">${t.th[3]}</th>
+        <th style="width:7%">${t.th[4]}</th>
+        <th style="width:9%">${t.th[5]}</th>
+        <th style="width:9%">${t.th[6]}</th>
+        <th style="width:11%">${t.th[7]}</th>
+        <th style="width:9%">${t.th[8]}</th>
+        <th style="width:10%">${t.th[9]}</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
     ${w.vat&&w.vat.trim()?`<div class="s-vat">${esc(w.vat)}</div>`:''}
     <div class="s-terms">${termRows}</div>
-    ${w.other&&w.other.trim()?`<div class="s-intro" style="font-size:8.6pt"><b>Inne warunki:</b> ${nl2br(w.other)}</div>`:''}
+    ${w.other&&w.other.trim()?`<div class="s-intro" style="font-size:8.6pt"><b>${t.other}:</b> ${nl2br(w.other)}</div>`:''}
     ${o.discOn&&o.disc&&o.disc.trim()?`<div class="s-disc">${nl2br(o.disc)}</div>`:''}
     <div class="s-banner"><img src="${BANNER}" alt=""></div>
     ${notes?`<div class="s-notes">${notes}</div>`:''}
@@ -568,6 +623,8 @@ function loadOffer(id){
   const r=getOffers().find(x=>x.id===id);if(!r)return;
   state.offer=JSON.parse(JSON.stringify(r.data));
   if(!state.offer.items||!state.offer.items.length)state.offer.items=[blankItem()];
+  lang = (state.offer.lang==='en') ? 'en' : 'pl';
+  updateLangToggle();
   fillForm();render();closeHistory();toast('Wczytano ofertę '+r.num);
 }
 function deleteOffer(id){
@@ -583,10 +640,34 @@ function newOffer(){
   state.offer.num=nextNumber();
   fillForm();render();toast('Nowa oferta: '+state.offer.num);
 }
+/* ================= język ================= */
+function updateLangToggle(){
+  const el=document.getElementById('langTog');
+  if(el)el.classList.toggle('en', lang==='en');
+}
+function toggleLang(){ setLang(lang==='pl'?'en':'pl'); }
+function setLang(l){
+  if(l===lang) return;
+  collect();
+  const o=state.offer, oldd=DEFC[lang], newd=DEFC[l];
+  // podmień tylko treści nietknięte (równe domyślnym w poprzednim języku)
+  if((o.w.vat||'')===oldd.vat) o.w.vat=newd.vat;
+  if((o.disc||'')===oldd.disc) o.disc=newd.disc;
+  if((o.notes||'')===oldd.notes) o.notes=newd.notes;
+  if((o.w.delivery||'')===oldd.delivery) o.w.delivery=newd.delivery;
+  if((o.w.pallet||'')===oldd.pallet) o.w.pallet=newd.pallet;
+  if((o.w.pay||'')===oldd.pay) o.w.pay=newd.pay;
+  if((o.w.tol||'')===oldd.tol) o.w.tol=newd.tol;
+  lang=l; o.lang=l;
+  try{localStorage.setItem('unipak_lang',l);}catch(e){}
+  updateLangToggle(); fillForm(); render();
+  toast(l==='en'?'Language: English':'Język: polski');
+}
 function pdfName(){
+  const pref = lang==='en' ? 'Quotation_' : 'Oferta_';
   const num=(state.offer.num||'oferta').replace(/[^\w\-]+/g,'-');
   let cl=(state.offer.client.name||'').trim().replace(/[^0-9A-Za-ząćęłńóśźżĄĆĘŁŃÓŚŹŻ \-]/g,'').replace(/\s+/g,'_');
-  return 'Oferta_'+num+(cl?'_'+cl:'')+'.pdf';
+  return pref+num+(cl?'_'+cl:'')+'.pdf';
 }
 function generatePDF(){
   collect();
@@ -603,12 +684,17 @@ function generatePDF(){
       const imgH=canvas.height*pw/canvas.width;           // wysokość obrazu w mm
       const img=canvas.toDataURL('image/jpeg',0.98);
       const pdf=new JS({unit:'mm',format:'a4',orientation:'portrait'});
-      pdf.addImage(img,'JPEG',0,0,pw,imgH,undefined,'FAST');
-      let heightLeft=imgH-ph, pos=0;
-      while(heightLeft>3){        // margines błędu: pomija zaokrąglenie <3mm, więc nie dokłada pustej strony
-        pos-=ph; pdf.addPage();
-        pdf.addImage(img,'JPEG',0,pos,pw,imgH,undefined,'FAST');
-        heightLeft-=ph;
+      if(imgH <= ph*1.3){
+        // dokument jednostronicowy — zawsze mieści się na JEDNEJ stronie A4.
+        // Odporne na różnice wysokości czcionek między komputerami/systemami:
+        // jeśli treść jest ociupinę wyższa niż strona, delikatnie ją dopasowujemy zamiast dokładać pustą kartkę.
+        const drawH=Math.min(imgH,ph), drawW=pw*drawH/imgH, x=(pw-drawW)/2;
+        pdf.addImage(img,'JPEG',x,0,drawW,drawH,undefined,'FAST');
+      } else {
+        // naprawdę długa oferta — dziel na kolejne strony
+        pdf.addImage(img,'JPEG',0,0,pw,imgH,undefined,'FAST');
+        let heightLeft=imgH-ph, pos=0;
+        while(heightLeft>3){ pos-=ph; pdf.addPage(); pdf.addImage(img,'JPEG',0,pos,pw,imgH,undefined,'FAST'); heightLeft-=ph; }
       }
       pdf.save(pdfName());
       toast('Zapisano PDF: '+pdfName());
@@ -649,7 +735,7 @@ function init(){
   loadSettings();
   state.offer=blankOffer();
   state.offer.num=nextNumber();
-  // apply settings defaults already inside state.settings
+  updateLangToggle();
   fillForm();render();
 }
 init();
