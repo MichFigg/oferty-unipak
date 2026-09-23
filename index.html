@@ -681,20 +681,35 @@ function generatePDF(){
     html2canvas(el,{scale:3,useCORS:true,backgroundColor:'#ffffff'}).then(canvas=>{
       el.style.boxShadow=shadow;
       const pw=210, ph=297;
-      const imgH=canvas.height*pw/canvas.width;           // wysokość obrazu w mm
-      const img=canvas.toDataURL('image/jpeg',0.98);
+      const rectEl=el.getBoundingClientRect();
+      const pxPerMM=canvas.width/pw;                 // piksele canvasa na 1 mm
+      const cssToCanvas=canvas.width/rectEl.width;   // piksele canvasa na 1 px CSS
+      const imgH=canvas.height/pxPerMM;              // całkowita wysokość treści w mm
       const pdf=new JS({unit:'mm',format:'a4',orientation:'portrait'});
-      if(imgH <= ph*1.3){
-        // dokument jednostronicowy — zawsze mieści się na JEDNEJ stronie A4.
-        // Odporne na różnice wysokości czcionek między komputerami/systemami:
-        // jeśli treść jest ociupinę wyższa niż strona, delikatnie ją dopasowujemy zamiast dokładać pustą kartkę.
+      if(imgH <= ph*1.15){
+        // jedna strona (z zapasem na różnice czcionek między komputerami) — dopasuj do 1 strony A4
         const drawH=Math.min(imgH,ph), drawW=pw*drawH/imgH, x=(pw-drawW)/2;
-        pdf.addImage(img,'JPEG',x,0,drawW,drawH,undefined,'FAST');
+        pdf.addImage(canvas.toDataURL('image/jpeg',0.98),'JPEG',x,0,drawW,drawH,undefined,'FAST');
       } else {
-        // naprawdę długa oferta — dziel na kolejne strony
-        pdf.addImage(img,'JPEG',0,0,pw,imgH,undefined,'FAST');
-        let heightLeft=imgH-ph, pos=0;
-        while(heightLeft>3){ pos-=ph; pdf.addPage(); pdf.addImage(img,'JPEG',0,pos,pw,imgH,undefined,'FAST'); heightLeft-=ph; }
+        // długa oferta — tnij na strony w bezpiecznych miejscach (bez cięcia wierszy i banera)
+        const pagePx=ph*pxPerMM;
+        const breaks=[];
+        el.querySelectorAll('table.s-tab tr, .s-vat, .s-terms, .s-disc, .s-banner, .s-notes, .s-foot').forEach(function(n){
+          breaks.push((n.getBoundingClientRect().bottom-rectEl.top)*cssToCanvas);
+        });
+        breaks.push(canvas.height); breaks.sort(function(a,b){return a-b;});
+        var top=0, first=true;
+        while(top < canvas.height-1){
+          var limit=top+pagePx, cut;
+          if(limit>=canvas.height){ cut=canvas.height; }
+          else { cut=-1; for(var bi=0;bi<breaks.length;bi++){ var b=breaks[bi]; if(b>top+10 && b<=limit) cut=b; } if(cut<0) cut=limit; }
+          var sliceH=Math.round(cut-top);
+          var tmp=document.createElement('canvas'); tmp.width=canvas.width; tmp.height=sliceH;
+          tmp.getContext('2d').drawImage(canvas,0,top,canvas.width,sliceH,0,0,canvas.width,sliceH);
+          if(!first) pdf.addPage();
+          pdf.addImage(tmp.toDataURL('image/jpeg',0.98),'JPEG',0,0,pw,sliceH/pxPerMM,undefined,'FAST');
+          first=false; top=cut;
+        }
       }
       pdf.save(pdfName());
       toast('Zapisano PDF: '+pdfName());
