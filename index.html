@@ -160,8 +160,11 @@
     .sheet{width:auto;min-height:0;box-shadow:none;padding:0;margin:0;font-size:10pt;}
     @page{size:A4;margin:12mm;}
     table.s-tab{page-break-inside:auto;}
+    table.s-tab thead{display:table-header-group;}            /* nagłówek tabeli powtarza się na każdej stronie */
+    table.s-tab tbody.s-item{page-break-inside:avoid;}        /* całej pozycji nie tniemy — przenosimy na nową stronę */
     table.s-tab tr{page-break-inside:avoid;}
     .sheet .s-foot{page-break-inside:avoid;}
+    .sheet .s-banner{page-break-inside:avoid;}
   }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -486,29 +489,31 @@ function render(){
       (s.rep?(t.contact+': '+s.rep+(s.reprole?(' · '+s.reprole):'')):'')].filter(Boolean)
       .map(x=>`<div class="ln">${esc(x)}</div>`).join('');
 
-  // table
+  // table — każda pozycja w osobnym <tbody>, żeby przy podziale na strony nie rozcinać pozycji
   let rows='';
   o.items.forEach((it,i)=>{
     const tiers=(it.tiers&&it.tiers.length)?it.tiers:[{qty:'',price:''}];
     const rs=tiers.length;
+    let trs='';
     tiers.forEach((t,j)=>{
-      rows+='<tr>';
+      trs+='<tr>';
       if(j===0){
-        rows+=`<td rowspan="${rs}">${i+1}</td>`;
-        rows+=`<td rowspan="${rs}" class="nm">${esc(it.name)}</td>`;
-        rows+=`<td rowspan="${rs}">${esc(it.dims)}</td>`;
-        rows+=`<td rowspan="${rs}" class="tl">${esc(it.spec)}</td>`;
-        rows+=`<td rowspan="${rs}">${esc(it.colors)}</td>`;
-        rows+=`<td rowspan="${rs}">${fmtInt(it.perPallet)}</td>`;
+        trs+=`<td rowspan="${rs}">${i+1}</td>`;
+        trs+=`<td rowspan="${rs}" class="nm">${esc(it.name)}</td>`;
+        trs+=`<td rowspan="${rs}">${esc(it.dims)}</td>`;
+        trs+=`<td rowspan="${rs}" class="tl">${esc(it.spec)}</td>`;
+        trs+=`<td rowspan="${rs}">${esc(it.colors)}</td>`;
+        trs+=`<td rowspan="${rs}">${fmtInt(it.perPallet)}</td>`;
       }
-      rows+=`<td>${fmtInt(t.qty)}</td>`;
-      rows+=`<td class="price">${fmtPLN(t.price)}</td>`;
+      trs+=`<td>${fmtInt(t.qty)}</td>`;
+      trs+=`<td class="price">${fmtPLN(t.price)}</td>`;
       if(j===0){
-        rows+=`<td rowspan="${rs}">${fmtPLN(it.klisza)}</td>`;
-        rows+=`<td rowspan="${rs}">${fmtPLN(it.wykrojnik)}</td>`;
+        trs+=`<td rowspan="${rs}">${fmtPLN(it.klisza)}</td>`;
+        trs+=`<td rowspan="${rs}">${fmtPLN(it.wykrojnik)}</td>`;
       }
-      rows+='</tr>';
+      trs+='</tr>';
     });
+    rows+=`<tbody class="s-item">${trs}</tbody>`;
   });
 
   // terms
@@ -564,7 +569,7 @@ function render(){
         <th style="width:9%">${t.th[8]}</th>
         <th style="width:10%">${t.th[9]}</th>
       </tr></thead>
-      <tbody>${rows}</tbody>
+      ${rows}
     </table>
     ${w.vat&&w.vat.trim()?`<div class="s-vat">${esc(w.vat)}</div>`:''}
     <div class="s-terms">${termRows}</div>
@@ -669,54 +674,42 @@ function pdfName(){
   let cl=(state.offer.client.name||'').trim().replace(/[^0-9A-Za-ząćęłńóśźżĄĆĘŁŃÓŚŹŻ \-]/g,'').replace(/\s+/g,'_');
   return pref+num+(cl?'_'+cl:'')+'.pdf';
 }
+function printPDF(){
+  // natywny podział przeglądarki: poprawne ramki na krawędzi strony, powtarzany nagłówek tabeli,
+  // cała pozycja przenoszona na nową stronę gdy się nie mieści
+  const oldTitle=document.title;
+  document.title=pdfName().replace(/\.pdf$/,'');       // podpowiedź nazwy pliku w oknie zapisu
+  function restore(){document.title=oldTitle;}
+  window.addEventListener('afterprint',function h(){window.removeEventListener('afterprint',h);restore();});
+  setTimeout(restore,4000);
+  setTimeout(function(){window.print();},150);
+}
 function generatePDF(){
   collect();
   if(!state.offer.num){state.offer.num=nextNumber();set('o_num',state.offer.num);}
   render();
   const el=document.getElementById('sheet');
   const JS=window.jspdf&&window.jspdf.jsPDF;
-  if(window.html2canvas&&JS){
+  const contentMM=el.getBoundingClientRect().height/3.779528;   // wysokość treści w mm (1mm≈3.7795px CSS)
+  const onePage=contentMM <= 297*1.15;                          // mieści się na jednej stronie (z zapasem na czcionki)
+  if(onePage && window.html2canvas && JS){
+    // krótka oferta — pobranie jednym kliknięciem, bez okna drukowania
     toast('Tworzę PDF…');
     const shadow=el.style.boxShadow; el.style.boxShadow='none';
-    html2canvas(el,{scale:3,useCORS:true,backgroundColor:'#ffffff'}).then(canvas=>{
+    html2canvas(el,{scale:3,useCORS:true,backgroundColor:'#ffffff'}).then(function(canvas){
       el.style.boxShadow=shadow;
       const pw=210, ph=297;
-      const rectEl=el.getBoundingClientRect();
-      const pxPerMM=canvas.width/pw;                 // piksele canvasa na 1 mm
-      const cssToCanvas=canvas.width/rectEl.width;   // piksele canvasa na 1 px CSS
-      const imgH=canvas.height/pxPerMM;              // całkowita wysokość treści w mm
+      const imgH=canvas.height*pw/canvas.width;
+      const drawH=Math.min(imgH,ph), drawW=pw*drawH/imgH, x=(pw-drawW)/2;
       const pdf=new JS({unit:'mm',format:'a4',orientation:'portrait'});
-      if(imgH <= ph*1.15){
-        // jedna strona (z zapasem na różnice czcionek między komputerami) — dopasuj do 1 strony A4
-        const drawH=Math.min(imgH,ph), drawW=pw*drawH/imgH, x=(pw-drawW)/2;
-        pdf.addImage(canvas.toDataURL('image/jpeg',0.98),'JPEG',x,0,drawW,drawH,undefined,'FAST');
-      } else {
-        // długa oferta — tnij na strony w bezpiecznych miejscach (bez cięcia wierszy i banera)
-        const pagePx=ph*pxPerMM;
-        const breaks=[];
-        el.querySelectorAll('table.s-tab tr, .s-vat, .s-terms, .s-disc, .s-banner, .s-notes, .s-foot').forEach(function(n){
-          breaks.push((n.getBoundingClientRect().bottom-rectEl.top)*cssToCanvas);
-        });
-        breaks.push(canvas.height); breaks.sort(function(a,b){return a-b;});
-        var top=0, first=true;
-        while(top < canvas.height-1){
-          var limit=top+pagePx, cut;
-          if(limit>=canvas.height){ cut=canvas.height; }
-          else { cut=-1; for(var bi=0;bi<breaks.length;bi++){ var b=breaks[bi]; if(b>top+10 && b<=limit) cut=b; } if(cut<0) cut=limit; }
-          var sliceH=Math.round(cut-top);
-          var tmp=document.createElement('canvas'); tmp.width=canvas.width; tmp.height=sliceH;
-          tmp.getContext('2d').drawImage(canvas,0,top,canvas.width,sliceH,0,0,canvas.width,sliceH);
-          if(!first) pdf.addPage();
-          pdf.addImage(tmp.toDataURL('image/jpeg',0.98),'JPEG',0,0,pw,sliceH/pxPerMM,undefined,'FAST');
-          first=false; top=cut;
-        }
-      }
+      pdf.addImage(canvas.toDataURL('image/jpeg',0.98),'JPEG',x,0,drawW,drawH,undefined,'FAST');
       pdf.save(pdfName());
       toast('Zapisano PDF: '+pdfName());
-    }).catch(()=>{el.style.boxShadow=shadow;toast('Nie udało się utworzyć PDF — otwieram druk');setTimeout(()=>window.print(),200);});
+    }).catch(function(){el.style.boxShadow=shadow;printPDF();});
   } else {
-    // brak internetu / biblioteki — awaryjnie druk do PDF
-    setTimeout(()=>window.print(),120);
+    // długa oferta (lub brak biblioteki) — natywny podział na strony przez przeglądarkę
+    toast('Długa oferta — w oknie wybierz „Zapisz jako PDF"');
+    printPDF();
   }
 }
 function exportBackup(){
