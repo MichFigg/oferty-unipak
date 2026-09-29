@@ -684,32 +684,80 @@ function printPDF(){
   setTimeout(restore,4000);
   setTimeout(function(){window.print();},150);
 }
+async function buildMultiPagePDF(src, JS){
+  // Buduje wielostronicowy PDF renderując KAŻDĄ stronę osobno (własny nagłówek tabeli, pełne ramki),
+  // dzięki czemu strony dzielą się czysto, a plik zapisuje się od razu (bez okna drukowania).
+  const mmToPx = src.getBoundingClientRect().width/210;
+  const A4px = 297*mmToPx;
+  const host=document.createElement('div');
+  host.style.cssText='position:fixed;left:-10000px;top:0;';
+  document.body.appendChild(host);
+  const pages=[];
+  function newPage(){ const p=src.cloneNode(false); p.style.boxShadow='none'; p.innerHTML=''; host.appendChild(p); pages.push(p); return p; }
+  function overflow(p){ return p.getBoundingClientRect().height > A4px+0.5; }
+  let page=newPage();
+  const children=Array.from(src.children);
+  for(const ch of children){
+    if(ch.tagName==='TABLE' && ch.classList.contains('s-tab')){
+      const thead=ch.querySelector('thead');
+      const tbodies=Array.from(ch.children).filter(n=>n.tagName==='TBODY');
+      let i=0;
+      while(i<tbodies.length){
+        let tbl=page.querySelector('table.s-tab.__cont');
+        if(!tbl){
+          tbl=ch.cloneNode(false); tbl.classList.add('__cont');
+          if(thead) tbl.appendChild(thead.cloneNode(true));
+          page.appendChild(tbl);
+          if(overflow(page)){ page.removeChild(tbl); page=newPage(); continue; }
+        }
+        tbl.appendChild(tbodies[i].cloneNode(true));
+        if(overflow(page)){
+          if(tbl.querySelectorAll('tbody').length>1){ tbl.removeChild(tbl.lastChild); tbl.classList.remove('__cont'); page=newPage(); }
+          else { i++; }   // pojedyncza pozycja wyższa niż strona — zostaw i idź dalej
+        } else { i++; }
+      }
+      const openT=page.querySelector('table.s-tab.__cont'); if(openT) openT.classList.remove('__cont');
+    } else {
+      page.appendChild(ch.cloneNode(true));
+      if(overflow(page)){ page.removeChild(page.lastChild); page=newPage(); page.appendChild(ch.cloneNode(true)); }
+    }
+  }
+  const pdf=new JS({unit:'mm',format:'a4',orientation:'portrait'});
+  for(let i=0;i<pages.length;i++){
+    const canvas=await html2canvas(pages[i],{scale:3,useCORS:true,backgroundColor:'#ffffff'});
+    const imgH=canvas.height*210/canvas.width;
+    const drawH=Math.min(imgH,297), drawW=210*drawH/imgH, x=(210-drawW)/2;
+    if(i>0) pdf.addPage();
+    pdf.addImage(canvas.toDataURL('image/jpeg',0.98),'JPEG',x,0,drawW,drawH,undefined,'FAST');
+  }
+  document.body.removeChild(host);
+  pdf.save(pdfName());
+}
 function generatePDF(){
   collect();
   if(!state.offer.num){state.offer.num=nextNumber();set('o_num',state.offer.num);}
   render();
   const el=document.getElementById('sheet');
   const JS=window.jspdf&&window.jspdf.jsPDF;
-  const contentMM=el.getBoundingClientRect().height/3.779528;   // wysokość treści w mm (1mm≈3.7795px CSS)
-  const onePage=contentMM <= 297*1.15;                          // mieści się na jednej stronie (z zapasem na czcionki)
-  if(onePage && window.html2canvas && JS){
-    // krótka oferta — pobranie jednym kliknięciem, bez okna drukowania
-    toast('Tworzę PDF…');
-    const shadow=el.style.boxShadow; el.style.boxShadow='none';
+  if(!(window.html2canvas&&JS)){ printPDF(); return; }   // brak bibliotek (offline) → awaryjnie druk
+  const contentMM=el.getBoundingClientRect().height/3.779528;
+  toast('Tworzę PDF…');
+  const shadow=el.style.boxShadow; el.style.boxShadow='none';
+  const restore=function(){el.style.boxShadow=shadow;};
+  if(contentMM <= 297*1.15){
+    // krótka oferta — jedna strona, pobranie jednym kliknięciem
     html2canvas(el,{scale:3,useCORS:true,backgroundColor:'#ffffff'}).then(function(canvas){
-      el.style.boxShadow=shadow;
-      const pw=210, ph=297;
-      const imgH=canvas.height*pw/canvas.width;
-      const drawH=Math.min(imgH,ph), drawW=pw*drawH/imgH, x=(pw-drawW)/2;
+      restore();
+      const imgH=canvas.height*210/canvas.width;
+      const drawH=Math.min(imgH,297), drawW=210*drawH/imgH, x=(210-drawW)/2;
       const pdf=new JS({unit:'mm',format:'a4',orientation:'portrait'});
       pdf.addImage(canvas.toDataURL('image/jpeg',0.98),'JPEG',x,0,drawW,drawH,undefined,'FAST');
-      pdf.save(pdfName());
-      toast('Zapisano PDF: '+pdfName());
-    }).catch(function(){el.style.boxShadow=shadow;printPDF();});
+      pdf.save(pdfName()); toast('Zapisano PDF: '+pdfName());
+    }).catch(function(){restore();printPDF();});
   } else {
-    // długa oferta (lub brak biblioteki) — natywny podział na strony przez przeglądarkę
-    toast('Długa oferta — w oknie wybierz „Zapisz jako PDF"');
-    printPDF();
+    // długa oferta — wielostronicowy PDF od razu do Pobranych (bez okna drukowania)
+    buildMultiPagePDF(el,JS).then(function(){restore();toast('Zapisano PDF: '+pdfName());})
+      .catch(function(){restore();printPDF();});
   }
 }
 function exportBackup(){
