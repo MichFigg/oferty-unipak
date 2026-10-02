@@ -295,7 +295,10 @@
 <div class="overlay" id="overlay" onclick="closeHistory()"></div>
 <div class="drawer" id="drawer">
   <div class="dh"><b>Historia ofert</b><button class="btn ghost" onclick="closeHistory()">✕</button></div>
-  <div class="dsearch"><input id="histSearch" type="text" placeholder="Szukaj po nazwie firmy…" oninput="renderHistList(this.value)"></div>
+  <div class="dsearch">
+    <input id="histSearch" type="text" placeholder="Szukaj po nazwie firmy" oninput="renderHistList()">
+    <input id="histSearchVal" type="text" placeholder="Szukaj po zawartości" oninput="renderHistList()" style="margin-top:6px">
+  </div>
   <div class="dcount" id="histCount"></div>
   <div class="dl" id="histList"></div>
 </div>
@@ -597,8 +600,22 @@ function saveOffer(){
   putOffers(arr);bumpNumber(state.offer.num);
   render();toast('Ofertę zapisano: '+state.offer.num);
 }
-function renderHistList(q){
-  q=(q||'').trim().toLowerCase();
+function offerText(d){
+  // tekst do przeszukiwania „po zawartości" — wszystkie istotne dane oferty
+  if(!d) return '';
+  const p=[];
+  (d.items||[]).forEach(function(it){
+    p.push(it.name,it.dims,it.spec,it.colors,it.perPallet,it.klisza,it.wykrojnik);
+    (it.tiers||[]).forEach(function(t){ p.push(t.qty,t.price); });
+  });
+  if(d.w){ const w=d.w; p.push(w.delivery,w.pallet,w.lead,w.pay,w.tol,w.graphic,w.vat,w.other); }
+  p.push(d.notes,d.disc);
+  if(d.client){ p.push(d.client.name,d.client.person,d.client.email,d.client.addr); }
+  return p.filter(Boolean).join(' ').toLowerCase();
+}
+function renderHistList(){
+  const qc=((document.getElementById('histSearch')||{}).value||'').trim().toLowerCase();
+  const qv=((document.getElementById('histSearchVal')||{}).value||'').trim().toLowerCase().replace(/\s+/g,'');
   const all=getOffers();
   const cnt=document.getElementById('histCount');
   if(!all.length){
@@ -606,19 +623,22 @@ function renderHistList(q){
     if(cnt)cnt.textContent='';
     return;
   }
-  const arr=q? all.filter(r=>((r.client||'')+' '+(r.num||'')).toLowerCase().includes(q)) : all;
-  if(cnt)cnt.textContent = q ? (arr.length+' z '+all.length+' ofert') : (all.length+' ofert');
-  document.getElementById('histList').innerHTML = arr.length? arr.map(r=>`
+  let arr=all;
+  if(qc) arr=arr.filter(function(r){ return ((r.client||'')+' '+(r.num||'')).toLowerCase().includes(qc); });
+  if(qv) arr=arr.filter(function(r){ return offerText(r.data).replace(/\s+/g,'').includes(qv); });
+  if(cnt)cnt.textContent = (qc||qv) ? (arr.length+' z '+all.length+' ofert') : (all.length+' ofert');
+  document.getElementById('histList').innerHTML = arr.length? arr.map(function(r){ return `
     <div class="histItem" onclick="loadOffer('${r.id}')">
       <button class="del" onclick="event.stopPropagation();deleteOffer('${r.id}')">usuń</button>
       <div class="hn">${esc(r.num)}</div>
       <div class="hc">${esc(r.client||'(bez klienta)')}</div>
       <div class="hd">zapisano ${new Date(r.savedAt).toLocaleString('pl-PL')}</div>
-    </div>`).join('') : '<div class="empty">Brak ofert dla „'+esc(q)+'".</div>';
+    </div>`; }).join('') : '<div class="empty">Brak ofert dla podanych kryteriów.</div>';
 }
 function openHistory(){
   const s=document.getElementById('histSearch');if(s)s.value='';
-  renderHistList('');
+  const sv=document.getElementById('histSearchVal');if(sv)sv.value='';
+  renderHistList();
   document.getElementById('drawer').classList.add('open');
   document.getElementById('overlay').classList.add('open');
   setTimeout(()=>{const s2=document.getElementById('histSearch');if(s2)s2.focus();},60);
@@ -635,7 +655,7 @@ function loadOffer(id){
 function deleteOffer(id){
   if(!confirm('Usunąć tę ofertę z historii?'))return;
   putOffers(getOffers().filter(x=>x.id!==id));
-  const s=document.getElementById('histSearch');renderHistList(s?s.value:'');
+  renderHistList();
 }
 
 /* ================= new / pdf / backup ================= */
